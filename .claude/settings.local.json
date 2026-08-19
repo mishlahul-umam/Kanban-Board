@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(go build *)",
+      "Bash(go vet *)",
+      "Bash(npx tsc *)",
+      "Bash(npx eslint *)",
+      "Bash(npx vite *)",
+      "Bash(gofmt -l .)",
+      "Bash(gofmt -d internal/config/config.go)"
+    ]
+  }
+}
