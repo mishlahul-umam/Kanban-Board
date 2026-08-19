@@ -4,7 +4,7 @@ Mini Kanban app: **Go (Fiber)** + **PostgreSQL** backend and **React (Vite)** fr
 
 ## Prerequisites
 
-- [Go](https://go.dev/) 1.22+ and [Node.js](https://nodejs.org/) 18+ (for local dev without Docker)
+- [Go](https://go.dev/) 1.22+ and [Node.js](https://nodejs.org/) 20+ (for local dev without Docker)
 - [Docker](https://docs.docker.com/get-docker/) + Docker Compose (for containerized run)
 - Or PostgreSQL 14+ running locally (local dev only)
 
