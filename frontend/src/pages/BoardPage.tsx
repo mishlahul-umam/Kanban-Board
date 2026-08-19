@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Link, useParams } from 'react-router-dom'
+import { Link, useNavigate, useParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api, wsBoardUrl } from '../api/client'
 import type { BoardDetail, Task, User } from '../api/types'
-import { KanbanBoard } from '../components/KanbanBoard'
+import { KanbanBoard, type ColumnError } from '../components/KanbanBoard'
 import { TaskDrawer } from '../components/TaskDrawer'
 
 function initials(name: string): string {
@@ -18,12 +18,17 @@ function initials(name: string): string {
 export function BoardPage() {
   const { boardId = '' } = useParams()
   const qc = useQueryClient()
+  const nav = useNavigate()
   const [selected, setSelected] = useState<Task | null>(null)
   const [drawerOpen, setDrawerOpen] = useState(false)
   const [taskFilter, setTaskFilter] = useState<'all' | 'overdue' | 'soon'>('all')
   const [inviteEmail, setInviteEmail] = useState('')
   const [inviteError, setInviteError] = useState<string | null>(null)
   const [inviteNotice, setInviteNotice] = useState<string | null>(null)
+  const [editingTitle, setEditingTitle] = useState(false)
+  const [titleDraft, setTitleDraft] = useState('')
+  const [boardError, setBoardError] = useState<string | null>(null)
+  const [columnError, setColumnError] = useState<ColumnError | null>(null)
 
   const board = useQuery({
     queryKey: ['board', boardId],
@@ -87,6 +92,64 @@ export function BoardPage() {
     onError: (e: Error) => setInviteError(e.message),
   })
 
+  const renameMut = useMutation({
+    mutationFn: (t: string) =>
+      api(`/boards/${boardId}`, { method: 'PATCH', json: { title: t } }),
+    onMutate: () => setBoardError(null),
+    onSuccess: () => {
+      setEditingTitle(false)
+      qc.invalidateQueries({ queryKey: ['board', boardId] })
+      qc.invalidateQueries({ queryKey: ['boards'] })
+    },
+    onError: (e: Error) => setBoardError(e.message),
+  })
+
+  const deleteBoardMut = useMutation({
+    mutationFn: () => api(`/boards/${boardId}`, { method: 'DELETE' }),
+    onMutate: () => setBoardError(null),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['boards'] })
+      nav('/')
+    },
+    onError: (e: Error) => setBoardError(e.message),
+  })
+
+  const addColumnMut = useMutation({
+    mutationFn: (t: string) =>
+      api(`/boards/${boardId}/columns`, { method: 'POST', json: { title: t } }),
+    onMutate: () => setColumnError(null),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['board', boardId] }),
+    onError: (e: Error) =>
+      setColumnError({ columnId: null, message: e.message }),
+  })
+
+  const renameColumnMut = useMutation({
+    mutationFn: (p: { columnId: string; title: string }) =>
+      api(`/columns/${p.columnId}`, {
+        method: 'PATCH',
+        json: { title: p.title },
+      }),
+    onMutate: () => setColumnError(null),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['board', boardId] }),
+    onError: (e: Error, p) =>
+      setColumnError({ columnId: p.columnId, message: e.message }),
+  })
+
+  const deleteColumnMut = useMutation({
+    mutationFn: (columnId: string) =>
+      api(`/columns/${columnId}`, { method: 'DELETE' }),
+    onMutate: () => setColumnError(null),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['board', boardId] }),
+    onError: (e: Error, columnId) =>
+      setColumnError({
+        columnId,
+        message:
+          e.message === 'column has tasks'
+            ? 'This column still has tasks. Move or delete them first.'
+            : e.message,
+      }),
+  })
+
   useEffect(() => {
     if (!boardId || !board.data) return
     const url = wsBoardUrl(boardId)
@@ -111,14 +174,92 @@ export function BoardPage() {
     setDrawerOpen(true)
   }
 
+  function startEditTitle() {
+    setTitleDraft(board.data?.title ?? '')
+    setBoardError(null)
+    setEditingTitle(true)
+  }
+
+  function cancelEditTitle() {
+    setEditingTitle(false)
+    setBoardError(null)
+  }
+
   return (
     <div className="min-h-screen px-4 py-6">
-      <header className="mx-auto mb-6 flex max-w-[1200px] flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div>
+      <header className="mx-auto mb-6 flex max-w-[1200px] flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+        <div className="min-w-0">
           <Link to="/" className="text-sm text-violet-400 hover:underline">
             ← Boards
           </Link>
-          <h1 className="mt-1 text-2xl font-semibold text-white">{title}</h1>
+          {editingTitle ? (
+            <form
+              className="mt-1 flex flex-wrap items-center gap-2"
+              onSubmit={(e) => {
+                e.preventDefault()
+                const t = titleDraft.trim()
+                if (!t) {
+                  setBoardError('Board title cannot be empty.')
+                  return
+                }
+                if (t === board.data?.title) {
+                  cancelEditTitle()
+                  return
+                }
+                renameMut.mutate(t)
+              }}
+            >
+              <input
+                autoFocus
+                className="w-full rounded-lg border border-zinc-800 bg-zinc-900 px-3 py-1.5 text-2xl font-semibold text-white outline-none focus:border-violet-500 sm:w-96"
+                value={titleDraft}
+                aria-label="Board title"
+                onChange={(e) => {
+                  setTitleDraft(e.target.value)
+                  if (boardError) setBoardError(null)
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Escape') cancelEditTitle()
+                }}
+                aria-invalid={!!boardError}
+                aria-describedby={boardError ? 'board-error' : undefined}
+              />
+              <button
+                type="submit"
+                disabled={renameMut.isPending}
+                className="rounded-lg bg-violet-600 px-4 py-2 text-sm font-medium text-white hover:bg-violet-500 disabled:opacity-50"
+              >
+                {renameMut.isPending ? 'Saving…' : 'Save'}
+              </button>
+              <button
+                type="button"
+                onClick={cancelEditTitle}
+                className="rounded-lg border border-zinc-700 px-3 py-2 text-sm text-zinc-300 hover:bg-zinc-900"
+              >
+                Cancel
+              </button>
+            </form>
+          ) : (
+            <h1 className="mt-1 text-2xl font-semibold text-white">
+              <button
+                type="button"
+                onClick={startEditTitle}
+                disabled={!board.data}
+                aria-label={`Rename board: ${title}`}
+                className="group flex max-w-full items-center gap-2 text-left disabled:cursor-default"
+              >
+                <span className="truncate">{title}</span>
+                {board.data && (
+                  <span
+                    aria-hidden="true"
+                    className="shrink-0 text-base text-zinc-600 transition group-hover:text-violet-400"
+                  >
+                    ✎
+                  </span>
+                )}
+              </button>
+            </h1>
+          )}
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <span className="text-xs text-zinc-500">Highlight:</span>
@@ -136,8 +277,35 @@ export function BoardPage() {
               {k === 'all' ? 'All' : k === 'overdue' ? 'Overdue' : 'Due ≤7d'}
             </button>
           ))}
+          {isOwner && (
+            <button
+              type="button"
+              onClick={() => {
+                if (
+                  confirm(
+                    `Delete "${board.data?.title ?? 'this board'}"? Its columns and tasks are deleted too.`,
+                  )
+                )
+                  deleteBoardMut.mutate()
+              }}
+              disabled={deleteBoardMut.isPending}
+              className="rounded-lg border border-red-900/60 px-3 py-1 text-xs text-red-400 hover:bg-red-950/40 disabled:opacity-50"
+            >
+              {deleteBoardMut.isPending ? 'Deleting…' : 'Delete board'}
+            </button>
+          )}
         </div>
       </header>
+
+      {boardError && (
+        <p
+          id="board-error"
+          className="mx-auto mb-4 max-w-[1200px] text-sm text-red-400"
+          role="alert"
+        >
+          {boardError}
+        </p>
+      )}
 
       {board.isLoading && <p className="text-zinc-500">Loading board…</p>}
       {board.error && (
@@ -251,6 +419,13 @@ export function BoardPage() {
             }
             onAddTask={(columnId, t) => createTaskMut.mutate({ columnId, title: t })}
             onOpenTask={openTask}
+            onAddColumn={(t) => addColumnMut.mutate(t)}
+            onRenameColumn={(columnId, t) =>
+              renameColumnMut.mutate({ columnId, title: t })
+            }
+            onDeleteColumn={(columnId) => deleteColumnMut.mutate(columnId)}
+            onClearColumnError={() => setColumnError(null)}
+            columnError={columnError}
           />
         </div>
       )}

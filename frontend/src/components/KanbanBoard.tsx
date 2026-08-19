@@ -15,16 +15,34 @@ import type { BoardDetail, Task } from '../api/types'
 import { columnDroppableId, computeMove } from '../lib/moveTask'
 import { TaskCard } from './TaskCard'
 
+export type ColumnError = { columnId: string | null; message: string }
+
 function ColumnDrop({
   columnId,
   title,
+  onRename,
+  onDelete,
+  onCancelEdit,
+  error,
   children,
 }: {
   columnId: string
   title: string
+  onRename: (title: string) => void
+  onDelete: () => void
+  onCancelEdit: () => void
+  error: string | null
   children: React.ReactNode
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: columnDroppableId(columnId) })
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState('')
+
+  function startEdit() {
+    setDraft(title)
+    setEditing(true)
+  }
+
   return (
     <div
       ref={setNodeRef}
@@ -33,8 +51,90 @@ function ColumnDrop({
       }`}
     >
       <div className="border-b border-zinc-800 px-3 py-2">
-        <h2 className="text-sm font-semibold text-zinc-200">{title}</h2>
+        {editing ? (
+          <form
+            className="flex flex-col gap-2"
+            onSubmit={(e) => {
+              e.preventDefault()
+              const t = draft.trim()
+              if (!t) return
+              if (t !== title) onRename(t)
+              setEditing(false)
+            }}
+          >
+            <input
+              autoFocus
+              className="w-full rounded border border-zinc-700 bg-zinc-950 px-2 py-1 text-sm font-semibold text-zinc-100 outline-none focus:border-violet-500"
+              placeholder="Column title"
+              aria-label="Column title"
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Escape') {
+                  setEditing(false)
+                  onCancelEdit()
+                }
+              }}
+            />
+            <div className="flex gap-2">
+              <button
+                type="submit"
+                className="rounded bg-violet-600 px-2 py-1 text-xs font-medium text-white hover:bg-violet-500"
+              >
+                Save
+              </button>
+              <button
+                type="button"
+                className="rounded px-2 py-1 text-xs text-zinc-500 hover:text-zinc-300"
+                onClick={() => {
+                  setEditing(false)
+                  onCancelEdit()
+                }}
+              >
+                Cancel
+              </button>
+            </div>
+          </form>
+        ) : (
+          <div className="flex items-center gap-2">
+            <h2 className="min-w-0 flex-1 text-sm font-semibold text-zinc-200">
+              <button
+                type="button"
+                onClick={startEdit}
+                aria-label={`Rename column: ${title}`}
+                className="group flex w-full items-center gap-1.5 text-left"
+              >
+                <span className="truncate">{title}</span>
+                <span
+                  aria-hidden="true"
+                  className="shrink-0 text-xs text-zinc-600 transition group-hover:text-violet-400"
+                >
+                  ✎
+                </span>
+              </button>
+            </h2>
+            <button
+              type="button"
+              onClick={() => {
+                if (confirm(`Delete column "${title}"? It must be empty first.`))
+                  onDelete()
+              }}
+              aria-label={`Delete column ${title}`}
+              className="shrink-0 rounded px-1.5 py-0.5 text-sm leading-none text-zinc-600 hover:bg-red-950/40 hover:text-red-400"
+            >
+              ×
+            </button>
+          </div>
+        )}
       </div>
+      {error && (
+        <p
+          className="border-b border-zinc-800 px-3 py-2 text-xs text-red-400"
+          role="alert"
+        >
+          {error}
+        </p>
+      )}
       <div className="flex flex-1 flex-col gap-2 p-2">{children}</div>
     </div>
   )
@@ -58,12 +158,22 @@ export function KanbanBoard({
   onMove,
   onAddTask,
   onOpenTask,
+  onAddColumn,
+  onRenameColumn,
+  onDeleteColumn,
+  onClearColumnError,
+  columnError = null,
   taskFilter = 'all',
 }: {
   board: BoardDetail
   onMove: (taskId: string, column_id: string, position: number) => void
   onAddTask: (columnId: string, title: string) => void
   onOpenTask: (task: Task) => void
+  onAddColumn: (title: string) => void
+  onRenameColumn: (columnId: string, title: string) => void
+  onDeleteColumn: (columnId: string) => void
+  onClearColumnError: () => void
+  columnError?: ColumnError | null
   taskFilter?: 'all' | 'overdue' | 'soon'
 }) {
   const [activeTask, setActiveTask] = useState<Task | null>(null)
@@ -105,9 +215,17 @@ export function KanbanBoard({
       onDragStart={handleDragStart}
       onDragEnd={handleDragEnd}
     >
-      <div className="flex gap-4 overflow-x-auto pb-4">
+      <div className="flex items-start gap-4 overflow-x-auto pb-4">
         {sortedColumns.map((col) => (
-          <ColumnDrop key={col.id} columnId={col.id} title={col.title}>
+          <ColumnDrop
+            key={col.id}
+            columnId={col.id}
+            title={col.title}
+            onRename={(t) => onRenameColumn(col.id, t)}
+            onDelete={() => onDeleteColumn(col.id)}
+            onCancelEdit={onClearColumnError}
+            error={columnError?.columnId === col.id ? columnError.message : null}
+          >
             <SortableContext items={col.tasks.map((t) => t.id)} strategy={verticalListSortingStrategy}>
               {col.tasks.map((t) => (
                 <TaskCard
@@ -121,6 +239,11 @@ export function KanbanBoard({
             <AddTaskInline onAdd={(title) => onAddTask(col.id, title)} />
           </ColumnDrop>
         ))}
+        <AddColumnInline
+          onAdd={onAddColumn}
+          onCancel={onClearColumnError}
+          error={columnError?.columnId === null ? columnError.message : null}
+        />
       </div>
       <DragOverlay>
         {activeTask ? (
@@ -185,5 +308,82 @@ function AddTaskInline({ onAdd }: { onAdd: (title: string) => void }) {
         </button>
       </div>
     </form>
+  )
+}
+
+function AddColumnInline({
+  onAdd,
+  onCancel,
+  error,
+}: {
+  onAdd: (title: string) => void
+  onCancel: () => void
+  error: string | null
+}) {
+  const [open, setOpen] = useState(false)
+  const [title, setTitle] = useState('')
+  return (
+    <div className="flex w-72 shrink-0 flex-col gap-2">
+      {open ? (
+        <form
+          className="flex flex-col gap-2 rounded-xl border border-zinc-800 bg-zinc-900/40 p-2"
+          onSubmit={(e) => {
+            e.preventDefault()
+            const t = title.trim()
+            if (!t) return
+            onAdd(t)
+            setTitle('')
+            setOpen(false)
+          }}
+        >
+          <input
+            autoFocus
+            className="rounded border border-zinc-700 bg-zinc-950 px-2 py-1.5 text-sm text-zinc-100 outline-none focus:border-violet-500"
+            placeholder="Column title"
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Escape') {
+                setOpen(false)
+                setTitle('')
+                onCancel()
+              }
+            }}
+          />
+          <div className="flex gap-2">
+            <button
+              type="submit"
+              className="rounded bg-violet-600 px-2 py-1 text-xs font-medium text-white hover:bg-violet-500"
+            >
+              Add
+            </button>
+            <button
+              type="button"
+              className="rounded px-2 py-1 text-xs text-zinc-500 hover:text-zinc-300"
+              onClick={() => {
+                setOpen(false)
+                setTitle('')
+                onCancel()
+              }}
+            >
+              Cancel
+            </button>
+          </div>
+        </form>
+      ) : (
+        <button
+          type="button"
+          onClick={() => setOpen(true)}
+          className="rounded-xl border border-dashed border-zinc-700 py-3 text-sm text-zinc-500 hover:border-zinc-600 hover:text-zinc-400"
+        >
+          + Add column
+        </button>
+      )}
+      {error && (
+        <p className="text-xs text-red-400" role="alert">
+          {error}
+        </p>
+      )}
+    </div>
   )
 }
