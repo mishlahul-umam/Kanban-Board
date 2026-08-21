@@ -51,10 +51,10 @@ func (h *Handlers) GetBoard(c *fiber.Ctx) error {
 		return h.sendError(c, fiber.StatusBadRequest, "invalid board id")
 	}
 	d, err := h.Store.GetBoardDetail(c.Context(), uid, bid)
-	if err == store.ErrForbidden {
+	if errors.Is(err, store.ErrForbidden) {
 		return h.sendError(c, fiber.StatusForbidden, "access denied")
 	}
-	if err == store.ErrNotFound {
+	if errors.Is(err, store.ErrNotFound) {
 		return h.sendError(c, fiber.StatusNotFound, "board not found")
 	}
 	if err != nil {
@@ -81,10 +81,10 @@ func (h *Handlers) PatchBoard(c *fiber.Ctx) error {
 		return h.sendError(c, fiber.StatusBadRequest, "title required")
 	}
 	err = h.Store.UpdateBoard(c.Context(), uid, bid, body.Title)
-	if err == store.ErrForbidden {
+	if errors.Is(err, store.ErrForbidden) {
 		return h.sendError(c, fiber.StatusForbidden, "access denied")
 	}
-	if err == store.ErrNotFound {
+	if errors.Is(err, store.ErrNotFound) {
 		return h.sendError(c, fiber.StatusNotFound, "board not found")
 	}
 	if err != nil {
@@ -106,10 +106,10 @@ func (h *Handlers) DeleteBoard(c *fiber.Ctx) error {
 		return h.sendError(c, fiber.StatusBadRequest, "invalid board id")
 	}
 	err = h.Store.DeleteBoard(c.Context(), uid, bid)
-	if err == store.ErrForbidden {
+	if errors.Is(err, store.ErrForbidden) {
 		return h.sendError(c, fiber.StatusForbidden, "only owner can delete")
 	}
-	if err == store.ErrNotFound {
+	if errors.Is(err, store.ErrNotFound) {
 		return h.sendError(c, fiber.StatusNotFound, "board not found")
 	}
 	if err != nil {
@@ -140,17 +140,17 @@ func (h *Handlers) InviteMember(c *fiber.Ctx) error {
 		return h.sendError(c, fiber.StatusBadRequest, "email required")
 	}
 	u, _, err := h.Store.UserByEmail(c.Context(), email)
-	if err == store.ErrNotFound {
+	if errors.Is(err, store.ErrNotFound) {
 		return h.sendError(c, fiber.StatusNotFound, "no user registered with that email")
 	}
 	if err != nil {
 		return h.sendError(c, fiber.StatusInternalServerError, "failed")
 	}
 	err = h.Store.AddBoardMember(c.Context(), uid, bid, u.ID)
-	if err == store.ErrForbidden {
+	if errors.Is(err, store.ErrForbidden) {
 		return h.sendError(c, fiber.StatusForbidden, "only the board owner can invite members")
 	}
-	if err == store.ErrNotFound {
+	if errors.Is(err, store.ErrNotFound) {
 		return h.sendError(c, fiber.StatusNotFound, "board not found")
 	}
 	if err != nil {
@@ -176,10 +176,10 @@ func (h *Handlers) RemoveMember(c *fiber.Ctx) error {
 		return h.sendError(c, fiber.StatusBadRequest, "invalid user id")
 	}
 	err = h.Store.RemoveBoardMember(c.Context(), uid, bid, mid)
-	if err == store.ErrForbidden {
+	if errors.Is(err, store.ErrForbidden) {
 		return h.sendError(c, fiber.StatusForbidden, "only the board owner can remove members")
 	}
-	if err == store.ErrNotFound {
+	if errors.Is(err, store.ErrNotFound) {
 		return h.sendError(c, fiber.StatusNotFound, "member not found")
 	}
 	if errors.Is(err, store.ErrCannotRemoveOwner) {
@@ -213,7 +213,7 @@ func (h *Handlers) CreateColumn(c *fiber.Ctx) error {
 		return h.sendError(c, fiber.StatusBadRequest, "title required")
 	}
 	col, err := h.Store.CreateColumn(c.Context(), uid, bid, body.Title, body.Position)
-	if err == store.ErrForbidden {
+	if errors.Is(err, store.ErrForbidden) {
 		return h.sendError(c, fiber.StatusForbidden, "access denied")
 	}
 	if err != nil {
@@ -247,10 +247,10 @@ func (h *Handlers) PatchColumn(c *fiber.Ctx) error {
 		return h.sendError(c, fiber.StatusBadRequest, "nothing to update")
 	}
 	err = h.Store.UpdateColumn(c.Context(), uid, cid, body.Title, body.Position)
-	if err == store.ErrForbidden {
+	if errors.Is(err, store.ErrForbidden) {
 		return h.sendError(c, fiber.StatusForbidden, "access denied")
 	}
-	if err == store.ErrNotFound {
+	if errors.Is(err, store.ErrNotFound) {
 		return h.sendError(c, fiber.StatusNotFound, "column not found")
 	}
 	if err != nil {
@@ -269,10 +269,10 @@ func (h *Handlers) DeleteColumn(c *fiber.Ctx) error {
 		return h.sendError(c, fiber.StatusBadRequest, "invalid column id")
 	}
 	err = h.Store.DeleteColumn(c.Context(), uid, cid)
-	if err == store.ErrForbidden {
+	if errors.Is(err, store.ErrForbidden) {
 		return h.sendError(c, fiber.StatusForbidden, "access denied")
 	}
-	if err == store.ErrNotFound {
+	if errors.Is(err, store.ErrNotFound) {
 		return h.sendError(c, fiber.StatusNotFound, "column not found")
 	}
 	if errors.Is(err, store.ErrColumnHasTasks) {

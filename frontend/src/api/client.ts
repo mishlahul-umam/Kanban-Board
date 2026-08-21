@@ -27,6 +27,11 @@ export async function api<T>(
   }
   const { json: _json, ...fetchInit } = (init ?? {}) as RequestInit & { json?: unknown }
   const r = await fetch(`${base}${path}`, { ...fetchInit, headers, body })
+  if (r.status === 401 && token) {
+    setToken(null)
+    window.location.href = '/login'
+    return new Promise<T>(() => {})
+  }
   if (r.status === 204) return undefined as T
   const text = await r.text()
   let data: { error?: string } | null = null

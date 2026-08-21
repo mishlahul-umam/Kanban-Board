@@ -4,8 +4,7 @@ import (
 	"strings"
 
 	"github.com/gofiber/fiber/v2"
-	"github.com/golang-jwt/jwt/v5"
-	"github.com/google/uuid"
+	"kanban/backend/internal/authjwt"
 )
 
 const LocalsUserID = "userID"
@@ -21,21 +20,7 @@ func JWT(secret string) fiber.Handler {
 		if tokenStr == "" {
 			return fiber.ErrUnauthorized
 		}
-		tok, err := jwt.Parse(tokenStr, func(t *jwt.Token) (any, error) {
-			if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
-				return nil, fiber.ErrUnauthorized
-			}
-			return []byte(secret), nil
-		})
-		if err != nil || !tok.Valid {
-			return fiber.ErrUnauthorized
-		}
-		claims, ok := tok.Claims.(jwt.MapClaims)
-		if !ok {
-			return fiber.ErrUnauthorized
-		}
-		sub, _ := claims["sub"].(string)
-		uid, err := uuid.Parse(sub)
+		uid, err := authjwt.Parse(tokenStr, secret)
 		if err != nil {
 			return fiber.ErrUnauthorized
 		}

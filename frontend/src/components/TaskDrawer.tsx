@@ -28,6 +28,8 @@ export function TaskDrawer({
   const [assigneeId, setAssigneeId] = useState<string>('')
   const [dueAt, setDueAt] = useState('')
   const [commentBody, setCommentBody] = useState('')
+  const [taskError, setTaskError] = useState<string | null>(null)
+  const [commentError, setCommentError] = useState<string | null>(null)
 
   useEffect(() => {
     if (!task) return
@@ -61,9 +63,11 @@ export function TaskDrawer({
         json: payload,
       })
     },
+    onMutate: () => setTaskError(null),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['board', boardId] })
     },
+    onError: (e: Error) => setTaskError(e.message),
   })
 
   const addComment = useMutation({
@@ -74,11 +78,13 @@ export function TaskDrawer({
         json: { body: commentBody.trim() },
       })
     },
+    onMutate: () => setCommentError(null),
     onSuccess: () => {
       setCommentBody('')
       qc.invalidateQueries({ queryKey: ['comments', task?.id] })
       qc.invalidateQueries({ queryKey: ['board', boardId] })
     },
+    onError: (e: Error) => setCommentError(e.message),
   })
 
   const deleteTask = useMutation({
@@ -86,10 +92,12 @@ export function TaskDrawer({
       if (!task) throw new Error('no task')
       return api(`/tasks/${task.id}`, { method: 'DELETE' })
     },
+    onMutate: () => setTaskError(null),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['board', boardId] })
       onClose()
     },
+    onError: (e: Error) => setTaskError(e.message),
   })
 
   if (!open || !task) return null
@@ -177,9 +185,20 @@ export function TaskDrawer({
             </button>
           </div>
 
+          {taskError && (
+            <p role="alert" className="mb-4 text-sm text-red-400">
+              {taskError}
+            </p>
+          )}
+
           <h3 className="mb-2 text-sm font-semibold text-zinc-300">Comments</h3>
           <ul className="mb-4 space-y-3">
             {comments.isLoading && <li className="text-sm text-zinc-500">Loading…</li>}
+            {comments.error && (
+              <li className="text-sm text-red-400" role="alert">
+                {(comments.error as Error).message}
+              </li>
+            )}
             {comments.data?.map((c) => (
               <li key={c.id} className="rounded-lg border border-zinc-800 bg-zinc-900/50 p-3 text-left text-sm">
                 <div className="mb-1 text-xs text-zinc-500">
@@ -212,6 +231,11 @@ export function TaskDrawer({
               Add comment
             </button>
           </form>
+          {commentError && (
+            <p role="alert" className="mt-2 text-sm text-red-400">
+              {commentError}
+            </p>
+          )}
         </div>
       </aside>
     </div>

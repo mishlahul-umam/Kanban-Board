@@ -3,10 +3,15 @@ package main
 import (
 	"context"
 	"log"
+	"os"
+	"os/signal"
+	"syscall"
+	"time"
 
 	"github.com/gofiber/contrib/websocket"
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/cors"
+	"github.com/gofiber/fiber/v2/middleware/limiter"
 	"github.com/gofiber/fiber/v2/middleware/logger"
 	"github.com/gofiber/fiber/v2/middleware/recover"
 	"kanban/backend/internal/config"
@@ -31,7 +36,7 @@ func main() {
 	}
 	defer pool.Close()
 
-	app := fiber.New(fiber.Config{DisableStartupMessage: false})
+	app := fiber.New()
 	app.Use(recover.New())
 	app.Use(logger.New())
 	app.Use(cors.New(cors.Config{
@@ -48,8 +53,12 @@ func main() {
 		Hub:       hub,
 	}
 
-	app.Post("/auth/register", h.Register)
-	app.Post("/auth/login", h.Login)
+	authLimiter := limiter.New(limiter.Config{
+		Max:        10,
+		Expiration: 1 * time.Minute,
+	})
+	app.Post("/auth/register", authLimiter, h.Register)
+	app.Post("/auth/login", authLimiter, h.Login)
 
 	protected := app.Group("", middleware.JWT(cfg.JWTSecret))
 	protected.Get("/auth/me", h.Me)
@@ -78,5 +87,20 @@ func main() {
 	})
 	app.Get("/ws/boards/:id", websocket.New(h.BoardWebSocket))
 
-	log.Fatal(app.Listen(":" + cfg.Port))
+	go func() {
+		if err := app.Listen(":" + cfg.Port); err != nil {
+			log.Printf("listen: %v", err)
+		}
+	}()
+
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+	<-quit
+	log.Println("shutting down...")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if err := app.ShutdownWithContext(ctx); err != nil {
+		log.Printf("shutdown: %v", err)
+	}
 }

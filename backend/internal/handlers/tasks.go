@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"errors"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
@@ -29,11 +30,11 @@ func (h *Handlers) CreateTask(c *fiber.Ctx) error {
 		return h.sendError(c, fiber.StatusBadRequest, "title required")
 	}
 	t, err := h.Store.CreateTask(c.Context(), uid, cid, body.Title, body.Description, body.AssigneeID, body.DueAt)
-	if err == store.ErrForbidden {
+	if errors.Is(err, store.ErrForbidden) {
 		return h.sendError(c, fiber.StatusForbidden, "access denied")
 	}
 	if err != nil {
-		if err.Error() == "assignee must be a board member" {
+		if errors.Is(err, store.ErrAssigneeNotMember) {
 			return h.sendError(c, fiber.StatusBadRequest, err.Error())
 		}
 		return h.sendError(c, fiber.StatusInternalServerError, "failed")
@@ -73,14 +74,14 @@ func (h *Handlers) PatchTask(c *fiber.Ctx) error {
 		DueAt: body.DueAt, ClearDueAt: body.ClearDueAt,
 	}
 	t, err := h.Store.UpdateTask(c.Context(), uid, tid, p)
-	if err == store.ErrForbidden {
+	if errors.Is(err, store.ErrForbidden) {
 		return h.sendError(c, fiber.StatusForbidden, "access denied")
 	}
-	if err == store.ErrNotFound {
+	if errors.Is(err, store.ErrNotFound) {
 		return h.sendError(c, fiber.StatusNotFound, "task not found")
 	}
 	if err != nil {
-		if err.Error() == "assignee must be a board member" {
+		if errors.Is(err, store.ErrAssigneeNotMember) {
 			return h.sendError(c, fiber.StatusBadRequest, err.Error())
 		}
 		return h.sendError(c, fiber.StatusInternalServerError, "failed")
@@ -111,14 +112,14 @@ func (h *Handlers) MoveTask(c *fiber.Ctx) error {
 		return h.sendError(c, fiber.StatusBadRequest, "invalid body")
 	}
 	err = h.Store.MoveTask(c.Context(), uid, tid, body.ColumnID, body.Position)
-	if err == store.ErrForbidden {
+	if errors.Is(err, store.ErrForbidden) {
 		return h.sendError(c, fiber.StatusForbidden, "access denied")
 	}
-	if err == store.ErrNotFound {
+	if errors.Is(err, store.ErrNotFound) {
 		return h.sendError(c, fiber.StatusNotFound, "task not found")
 	}
 	if err != nil {
-		if err.Error() == "columns must belong to same board" || err.Error() == "invalid position" {
+		if errors.Is(err, store.ErrCrossBoardMove) || errors.Is(err, store.ErrInvalidPosition) {
 			return h.sendError(c, fiber.StatusBadRequest, err.Error())
 		}
 		return h.sendError(c, fiber.StatusInternalServerError, "failed")
@@ -143,10 +144,10 @@ func (h *Handlers) DeleteTask(c *fiber.Ctx) error {
 	}
 	bid, _ := h.Store.TaskBoardID(c.Context(), tid)
 	err = h.Store.DeleteTask(c.Context(), uid, tid)
-	if err == store.ErrForbidden {
+	if errors.Is(err, store.ErrForbidden) {
 		return h.sendError(c, fiber.StatusForbidden, "access denied")
 	}
-	if err == store.ErrNotFound {
+	if errors.Is(err, store.ErrNotFound) {
 		return h.sendError(c, fiber.StatusNotFound, "task not found")
 	}
 	if err != nil {
@@ -172,10 +173,10 @@ func (h *Handlers) ListComments(c *fiber.Ctx) error {
 		return h.sendError(c, fiber.StatusBadRequest, "invalid task id")
 	}
 	list, err := h.Store.ListComments(c.Context(), uid, tid)
-	if err == store.ErrForbidden {
+	if errors.Is(err, store.ErrForbidden) {
 		return h.sendError(c, fiber.StatusForbidden, "access denied")
 	}
-	if err == store.ErrNotFound {
+	if errors.Is(err, store.ErrNotFound) {
 		return h.sendError(c, fiber.StatusNotFound, "task not found")
 	}
 	if err != nil {
@@ -198,10 +199,10 @@ func (h *Handlers) CreateComment(c *fiber.Ctx) error {
 		return h.sendError(c, fiber.StatusBadRequest, "body required")
 	}
 	co, err := h.Store.AddComment(c.Context(), uid, tid, body.Body)
-	if err == store.ErrForbidden {
+	if errors.Is(err, store.ErrForbidden) {
 		return h.sendError(c, fiber.StatusForbidden, "access denied")
 	}
-	if err == store.ErrNotFound {
+	if errors.Is(err, store.ErrNotFound) {
 		return h.sendError(c, fiber.StatusNotFound, "task not found")
 	}
 	if err != nil {

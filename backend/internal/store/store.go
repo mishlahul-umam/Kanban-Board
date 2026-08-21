@@ -14,6 +14,9 @@ var ErrNotFound = errors.New("not found")
 var ErrForbidden = errors.New("forbidden")
 var ErrColumnHasTasks = errors.New("column has tasks")
 var ErrCannotRemoveOwner = errors.New("cannot remove board owner")
+var ErrAssigneeNotMember = errors.New("assignee must be a board member")
+var ErrCrossBoardMove = errors.New("columns must belong to same board")
+var ErrInvalidPosition = errors.New("invalid position")
 
 type Store struct {
 	pool *pgxpool.Pool
@@ -407,6 +410,25 @@ func (s *Store) DeleteColumn(ctx context.Context, userID, columnID uuid.UUID) er
 	return nil
 }
 
+func (s *Store) validateAssignee(ctx context.Context, boardID, assigneeID uuid.UUID) error {
+	var mem bool
+	err := s.pool.QueryRow(ctx, `
+		SELECT EXISTS (SELECT 1 FROM board_members WHERE board_id = $1 AND user_id = $2)
+	`, boardID, assigneeID).Scan(&mem)
+	if err != nil {
+		return err
+	}
+	if mem {
+		return nil
+	}
+	var owner uuid.UUID
+	_ = s.pool.QueryRow(ctx, `SELECT owner_id FROM boards WHERE id = $1`, boardID).Scan(&owner)
+	if owner != assigneeID {
+		return ErrAssigneeNotMember
+	}
+	return nil
+}
+
 func (s *Store) CreateTask(ctx context.Context, userID, columnID uuid.UUID, title string, description *string, assigneeID *uuid.UUID, dueAt *time.Time) (TaskOut, error) {
 	bid, err := s.columnBoardID(ctx, columnID)
 	if err != nil {
@@ -420,19 +442,8 @@ func (s *Store) CreateTask(ctx context.Context, userID, columnID uuid.UUID, titl
 		return TaskOut{}, ErrForbidden
 	}
 	if assigneeID != nil {
-		var mem bool
-		err = s.pool.QueryRow(ctx, `
-			SELECT EXISTS (SELECT 1 FROM board_members WHERE board_id = $1 AND user_id = $2)
-		`, bid, *assigneeID).Scan(&mem)
-		if err != nil {
+		if err := s.validateAssignee(ctx, bid, *assigneeID); err != nil {
 			return TaskOut{}, err
-		}
-		if !mem {
-			var owner uuid.UUID
-			_ = s.pool.QueryRow(ctx, `SELECT owner_id FROM boards WHERE id = $1`, bid).Scan(&owner)
-			if owner != *assigneeID {
-				return TaskOut{}, errors.New("assignee must be a board member")
-			}
 		}
 	}
 	var pos int
@@ -486,19 +497,8 @@ func (s *Store) UpdateTask(ctx context.Context, userID, taskID uuid.UUID, p Task
 		return TaskOut{}, ErrForbidden
 	}
 	if p.AssigneeID != nil {
-		var mem bool
-		err = s.pool.QueryRow(ctx, `
-			SELECT EXISTS (SELECT 1 FROM board_members WHERE board_id = $1 AND user_id = $2)
-		`, bid, *p.AssigneeID).Scan(&mem)
-		if err != nil {
+		if err := s.validateAssignee(ctx, bid, *p.AssigneeID); err != nil {
 			return TaskOut{}, err
-		}
-		if !mem {
-			var owner uuid.UUID
-			_ = s.pool.QueryRow(ctx, `SELECT owner_id FROM boards WHERE id = $1`, bid).Scan(&owner)
-			if owner != *p.AssigneeID {
-				return TaskOut{}, errors.New("assignee must be a board member")
-			}
 		}
 	}
 	var t TaskOut
@@ -572,7 +572,7 @@ func (s *Store) DeleteTask(ctx context.Context, userID, taskID uuid.UUID) error 
 
 func (s *Store) MoveTask(ctx context.Context, userID, taskID uuid.UUID, destColumnID uuid.UUID, newPosition int) error {
 	if newPosition < 0 {
-		return errors.New("invalid position")
+		return ErrInvalidPosition
 	}
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
@@ -605,7 +605,7 @@ func (s *Store) MoveTask(ctx context.Context, userID, taskID uuid.UUID, destColu
 		return err
 	}
 	if srcBoard != dstBoard {
-		return errors.New("columns must belong to same board")
+		return ErrCrossBoardMove
 	}
 
 	ok, err := s.hasBoardAccessTx(ctx, tx, userID, srcBoard)

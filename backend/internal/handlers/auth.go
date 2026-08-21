@@ -1,10 +1,13 @@
 package handlers
 
 import (
+	"errors"
 	"strings"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/jackc/pgerrcode"
+	"github.com/jackc/pgx/v5/pgconn"
 	"golang.org/x/crypto/bcrypt"
 	"kanban/backend/internal/authjwt"
 	"kanban/backend/internal/store"
@@ -37,7 +40,8 @@ func (h *Handlers) Register(c *fiber.Ctx) error {
 	}
 	u, err := h.Store.CreateUser(c.Context(), body.Email, string(hash), body.DisplayName)
 	if err != nil {
-		if strings.Contains(err.Error(), "unique") || strings.Contains(err.Error(), "duplicate") {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == pgerrcode.UniqueViolation {
 			return h.sendError(c, fiber.StatusConflict, "email already registered")
 		}
 		return h.sendError(c, fiber.StatusInternalServerError, "could not create user")
@@ -62,7 +66,7 @@ func (h *Handlers) Login(c *fiber.Ctx) error {
 		return h.sendError(c, fiber.StatusBadRequest, "email and password required")
 	}
 	u, hash, err := h.Store.UserByEmail(c.Context(), body.Email)
-	if err == store.ErrNotFound {
+	if errors.Is(err, store.ErrNotFound) {
 		return h.sendError(c, fiber.StatusUnauthorized, "invalid credentials")
 	}
 	if err != nil {
@@ -87,7 +91,7 @@ func (h *Handlers) Me(c *fiber.Ctx) error {
 		return fiber.ErrUnauthorized
 	}
 	u, err := h.Store.UserByID(c.Context(), uid)
-	if err == store.ErrNotFound {
+	if errors.Is(err, store.ErrNotFound) {
 		return h.sendError(c, fiber.StatusNotFound, "user not found")
 	}
 	if err != nil {

@@ -1,6 +1,7 @@
 package config
 
 import (
+	"fmt"
 	"os"
 
 	"github.com/joho/godotenv"
@@ -11,6 +12,7 @@ type Config struct {
 	DatabaseURL string
 	JWTSecret   string
 	CORSOrigin  string
+	AppEnv      string
 }
 
 func Load() (*Config, error) {
@@ -21,11 +23,15 @@ func Load() (*Config, error) {
 		DatabaseURL: os.Getenv("DATABASE_URL"),
 		JWTSecret:   os.Getenv("JWT_SECRET"),
 		CORSOrigin:  getEnv("CORS_ORIGIN", "http://localhost:5173"),
+		AppEnv:      getEnv("APP_ENV", "development"),
 	}
 	if c.DatabaseURL == "" {
 		c.DatabaseURL = "postgres://postgres:postgres@localhost:5432/kanban_dev?sslmode=disable"
 	}
 	if c.JWTSecret == "" {
+		if c.AppEnv == "production" {
+			return nil, fmt.Errorf("JWT_SECRET must be set when APP_ENV=production")
+		}
 		c.JWTSecret = "dev-secret-change-in-production"
 	}
 	return c, nil
